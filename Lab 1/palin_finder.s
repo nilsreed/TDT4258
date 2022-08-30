@@ -4,7 +4,7 @@
 
 _start:
 	// Here your execution starts
-	b palindrom_not_found
+	b palindrome_found
 	b exit
 
 	
@@ -22,7 +22,9 @@ palindrome_found:
 	// Switch on only the 5 rightmost LEDs
 	// Write 'Palindrome detected' to UART
 
-	// TURN ON LEDS HERE
+	ldr r0, =0xFF200000		// Load address of red LED data register
+	ldr r1, =0x1F			// 1s in bits 0-4
+	str r1, [r0]			// Write to data register to turn leds on
 
 	ldr r0, =found
 	b print_output
@@ -33,6 +35,10 @@ palindrom_not_found:
 	// Write 'Not a palindrome' to UART
 
 	// TURN ON LEDS HERE
+	ldr r0, =0xFF200000		// Load address of red LED data register
+	ldr r1, =0x3E0			// 1s in bits 5-9
+	str r1, [r0]			// Write to data register to turn leds on
+
 
 	ldr r0, =n_found
 	b print_output
