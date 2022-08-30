@@ -15,7 +15,7 @@ check_input:
 	// You could use this symbol to check for your input length
 	// you can assume that your input string is at least 2 characters 
 	// long and ends with a null byte
-	ldr r0, #0			// Counter for string length
+	ldr r0, =0			// Counter for string length
 	ldr r1, =input		// Load address of input
 check_loop:
 	ldrb r2, [r1]		// Load character from string
@@ -27,6 +27,7 @@ check_loop:
 	sub r2, r2, #32		// Else, subtract 32 (to make it upper case), see ASCII table
 	strb r2, [r1]		// Store case-corrected character for later
 correct_case:
+	add r1, r1, #1		// Increment memory location
 	b check_loop
 check_done:
 	b check_palindrome
@@ -38,10 +39,29 @@ check_done:
 check_palindrome:
 	ldr r1, =input			// Load address of input string
 	add r2, r1, r0			// calculate address of last character in string
+	sub r2, r2, #1			
+	ldr r3, =0x20			// ASCII code for space, for comparison
 palindrome_loop:
 	cmp r1, r2				// Check if the addresses have crossed each other (meaning we've traversed the string in its entirety)
-	bgt palindrome_found	
-	ldr r2, [r1]
+	bgt palindrome_found
+space_loop_left:			// Loop to make sure we skip whitespace when traversing from the left
+	ldrb r4, [r1]			// Load new character to compare
+	cmp r4, r3				// Compare newly fetched character to space
+	bne space_loop_right	// Go on if it isn't
+	add r1, r1, #1			// Else increment the index in the string and check again
+	b space_loop_left		
+space_loop_right:			// Loop to make sure we skip whitespace when traversing from the right
+	ldrb r5, [r2]			// Load new character to compare
+	cmp r5, r3				// Compare newly fetched character to space
+	bne no_spaces			// Go on if it isn't
+	sub r1, r1, #1			// Else decrement the index in the string and check again
+	b space_loop_right		
+no_spaces:
+	cmp r4, r5				// Compare characters
+	bne palindrom_not_found 
+	add r1, r1, #1			// Increment and decrement positions in string
+	sub r2, r2, #1
+	b palindrome_loop
 	// TODO check strings, break to not found if not equal. Remember to skip white space..
 	
 	// Here you could check whether input is a palindrome or not
@@ -96,11 +116,12 @@ exit:
 	// This is the input you are supposed to check for a palindrome
 	// You can modify the string during development, however you
 	// are not allowed to change the label 'input'!
-	input: .asciz "level"
+	// input: .asciz "level"
 	// input: .asciz "8448"
     // input: .asciz "KayAk"
     // input: .asciz "step on no pets"
     // input: .asciz "Never odd or even"
+	input: .asciz "Clearly not palindromic"
 	
 	// Save output strings in data section for convenience
 	found: .asciz "Palindrome detected\n"
