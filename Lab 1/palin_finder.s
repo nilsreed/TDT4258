@@ -4,43 +4,64 @@
 
 _start:
 	// Here your execution starts
-	b palindrome_found
-	b exit
+	b check_input
 
-	
+
+/**
+* Loops through input, corrects lower case letters to upper case
+* and counts the number of letters.
+*/
 check_input:
 	// You could use this symbol to check for your input length
 	// you can assume that your input string is at least 2 characters 
 	// long and ends with a null byte
+	ldr r0, #0			// Counter for string length
+	ldr r1, =input		// Load address of input
+check_loop:
+	ldrb r2, [r1]		// Load character from string
+	cmp r2, #0			// Check if end of string
+	beq check_done
+	add r0, r0, #1		// Increment counter for string length
+	cmp r2, #90			// Check if character is lower case letter, see ASCII table
+	blt correct_case	// Branch if character is not lower case letter
+	sub r2, r2, #32		// Else, subtract 32 (to make it upper case), see ASCII table
+	strb r2, [r1]		// Store case-corrected character for later
+correct_case:
+	b check_loop
+check_done:
+	b check_palindrome
 	
-	
+/**
+*
+* Assumes the number of characters is stored in r0
+*/
 check_palindrome:
+	ldr r1, =input			// Load address of input string
+	add r2, r1, r0			// calculate address of last character in string
+palindrome_loop:
+	cmp r1, r2				// Check if the addresses have crossed each other (meaning we've traversed the string in its entirety)
+	bgt palindrome_found	
+	ldr r2, [r1]
+	// TODO check strings, break to not found if not equal. Remember to skip white space..
+	
 	// Here you could check whether input is a palindrome or not
 	
 	
 palindrome_found:
-	// Switch on only the 5 rightmost LEDs
-	// Write 'Palindrome detected' to UART
-
 	ldr r0, =0xFF200000		// Load address of red LED data register
 	ldr r1, =0x1F			// 1s in bits 0-4
 	str r1, [r0]			// Write to data register to turn leds on
 
-	ldr r0, =found
+	ldr r0, =found			// Load correct string address into r0
 	b print_output
 	
 	
 palindrom_not_found:
-	// Switch on only the 5 leftmost LEDs
-	// Write 'Not a palindrome' to UART
-
-	// TURN ON LEDS HERE
 	ldr r0, =0xFF200000		// Load address of red LED data register
 	ldr r1, =0x3E0			// 1s in bits 5-9
 	str r1, [r0]			// Write to data register to turn leds on
 
-
-	ldr r0, =n_found
+	ldr r0, =n_found		// Load correct string address into r0
 	b print_output
 
 
