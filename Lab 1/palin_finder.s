@@ -39,22 +39,22 @@ check_done:
 check_palindrome:
 	ldr r1, =input			// Load address of input string
 	add r2, r1, r0			// calculate address of last character in string
-	sub r2, r2, #1			
+	sub r1, r1, #1			// Decrement the index in the memory for simplifying logic
 	ldr r3, =0x20			// ASCII code for space, for comparison
 palindrome_loop:
 	cmp r1, r2				// Check if the addresses have crossed each other (meaning we've traversed the string in its entirety)
 	bgt palindrome_found
 space_loop_left:			// Loop to make sure we skip whitespace when traversing from the left
+	add r1, r1, #1			// Increment the index in the string
 	ldrb r4, [r1]			// Load new character to compare
 	cmp r4, r3				// Compare newly fetched character to space
 	bne space_loop_right	// Go on if it isn't
-	add r1, r1, #1			// Else increment the index in the string and check again
 	b space_loop_left		
 space_loop_right:			// Loop to make sure we skip whitespace when traversing from the right
+	sub r2, r2, #1			// Decrement the index in the string
 	ldrb r5, [r2]			// Load new character to compare
 	cmp r5, r3				// Compare newly fetched character to space
 	bne no_spaces			// Go on if it isn't
-	sub r1, r1, #1			// Else decrement the index in the string and check again
 	b space_loop_right		
 no_spaces:
 	cmp r4, r5				// Compare characters
