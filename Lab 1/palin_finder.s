@@ -33,6 +33,10 @@ check_done:
 	b check_palindrome
 	
 /**
+* Iterates through string from head and tail, and compares each character,
+* ignoring whitespace. If the corresponding letters are equal in all positions, 
+* it breaks to palindrome_found. If it finds characters in corresponding
+* positions that are not equal, it breaks to palindrom_not_found.
 *
 * Assumes the number of characters is stored in r0
 */
@@ -64,7 +68,9 @@ no_spaces:
 	
 	// Here you could check whether input is a palindrome or not
 	
-	
+/**
+* Turns on 5 rightmost leds and loads address of string found into r0
+*/
 palindrome_found:
 	ldr r0, =0xFF200000		// Load address of red LED data register
 	ldr r1, =0x1F			// 1s in bits 0-4
@@ -73,7 +79,9 @@ palindrome_found:
 	ldr r0, =found			// Load correct string address into r0
 	b print_output
 	
-	
+/**
+* Turns on 5 leftmost leds and loads address of string n_found into r0
+*/	
 palindrom_not_found:
 	ldr r0, =0xFF200000		// Load address of red LED data register
 	ldr r1, =0x3E0			// 1s in bits 5-9
