@@ -114,12 +114,11 @@ exit:
 	// This is the input you are supposed to check for a palindrome
 	// You can modify the string during development, however you
 	// are not allowed to change the label 'input'!
-	// input: .asciz "level"
+	input: .asciz "level"
 	// input: .asciz "8448"
     // input: .asciz "KayAk"
     // input: .asciz "step on no pets"
     // input: .asciz "Never odd or even"
-	input: .asciz "Clearly not palindromic"
 	
 	// Save output strings in data section for convenience
 	found: .asciz "Palindrome detected\n"
