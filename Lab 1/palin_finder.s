@@ -58,9 +58,7 @@ space_loop_right:			// Loop to make sure we skip whitespace when traversing from
 	b space_loop_right		
 no_spaces:
 	cmp r4, r5				// Compare characters
-	bne palindrom_not_found 
-	add r1, r1, #1			// Increment and decrement positions in string
-	sub r2, r2, #1
+	bne palindrom_not_found
 	b palindrome_loop
 	// TODO check strings, break to not found if not equal. Remember to skip white space..
 	
