@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 typedef enum { dm, fa } cache_map_t;
 typedef enum { uc, sc } cache_org_t;
@@ -27,6 +28,11 @@ uint32_t cache_size;
 uint32_t block_size = 64;
 cache_map_t cache_mapping;
 cache_org_t cache_org;
+
+uint32_t* cache;
+uint8_t block_bits = 6; // Constant, as block size is 64
+uint8_t index_bits;
+uint8_t tag_bits;
 
 // USE THIS FOR YOUR CACHE STATISTICS
 cache_stat_t cache_statistics;
