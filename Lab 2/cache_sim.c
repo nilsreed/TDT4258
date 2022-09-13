@@ -163,11 +163,28 @@ void main(int argc, char** argv) {
       // Instructions are saved in the first half of 
       // cache array and data in the other half
       uint32_t offset = (access.accesstype == instruction) ? 0 : cache_size/2;
+      if (cache_mapping == dm){
+        if (cache[offset + index].tag == tag){ // Cache hit
+          cache_statistics.hits++;
+        }
+        else { // Cache miss
+          cache[offset + index].tag = tag; // "Retrieve" newly used value into cache
+        }
+      }
+      else {  // cache_mapping == fa        
+      
+      }
     }
-    else{ // cache_org == uc
+    else { // cache_org == uc
+      if (cache_mapping == dm){
 
+      }
+      else {  // cache_mapping == fa        
+      
+      }
     }
-    // ADD YOUR CODE HERE
+    // Increment number of accesses once per loop
+    cache_statistics.accesses++;
   }
 
   // Free malloc'd cache
