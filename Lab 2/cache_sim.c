@@ -5,6 +5,8 @@
 #include <string.h>
 #include <math.h>
 
+#define ADDRESS_BITS 32
+
 typedef enum { dm, fa } cache_map_t;
 typedef enum { uc, sc } cache_org_t;
 typedef enum { instruction, data } access_t;
@@ -22,17 +24,18 @@ typedef struct {
   // remove the accesses or hits
 } cache_stat_t;
 
+// cache "line" struct to simplify searching in cache
+typedef struct {
+    uint16_t idx;
+    uint32_t tag;
+} cache_line_t;
+
 // DECLARE CACHES AND COUNTERS FOR THE STATS HERE
 
 uint32_t cache_size;
 uint32_t block_size = 64;
 cache_map_t cache_mapping;
 cache_org_t cache_org;
-
-uint32_t* cache;
-uint8_t block_bits = 6; // Constant, as block size is 64
-uint8_t index_bits;
-uint8_t tag_bits;
 
 // USE THIS FOR YOUR CACHE STATISTICS
 cache_stat_t cache_statistics;
@@ -125,6 +128,13 @@ void main(int argc, char** argv) {
     exit(1);
   }
 
+  // Allocate cache and figure out number of bits dedicated to tag and index
+  cache_line_t* cache = (cache_line_t*) malloc(cache_size*sizeof(cache_line_t));
+
+  uint8_t block_offset_bits = 6;                                          // Constant, as block size is 64
+  uint16_t index_bits = log2(cache_size / block_size);                    // log2 of no. of blocks is the number of bits needed for index
+  uint16_t tag_bits = ADDRESS_BITS - block_offset_bits - index_bits;  // The rest of the bits in the address are given to the tag
+
   /* Loop until whole trace file has been read */
   mem_access_t access;
   while (1) {
@@ -133,8 +143,35 @@ void main(int argc, char** argv) {
     if (access.address == 0) break;
     printf("%d %x\n", access.accesstype, access.address);
     /* Do a cache access */
+    /**
+     * TODO
+     *  find tag, idx
+     *  search cache
+     *    differently based on parameters
+     *  update cache if not found
+     *    differently based on parameters
+     *  update cache_statistics
+     */
+    
+    // Find index and tag for searching in the cache
+    uint16_t index = access.address >> (ADDRESS_BITS - index_bits);
+    uint32_t tag = access.address << (index_bits);
+    tag = tag >> (index_bits + block_offset_bits);
+
+    if (cache_org == sc){
+      // set offset according to access type of data. 
+      // Instructions are saved in the first half of 
+      // cache array and data in the other half
+      uint32_t offset = (access.accesstype == instruction) ? 0 : cache_size/2;
+    }
+    else{ // cache_org == uc
+
+    }
     // ADD YOUR CODE HERE
   }
+
+  // Free malloc'd cache
+  free(cache);
 
   /* Print the statistics */
   // DO NOT CHANGE THE FOLLOWING LINES!
