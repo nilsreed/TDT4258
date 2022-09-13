@@ -28,6 +28,7 @@ typedef struct {
 typedef struct {
     uint16_t idx;
     uint32_t tag;
+    access_t type;
 } cache_line_t;
 
 // DECLARE CACHES AND COUNTERS FOR THE STATS HERE
@@ -128,12 +129,17 @@ void main(int argc, char** argv) {
     exit(1);
   }
 
-  // Allocate cache and figure out number of bits dedicated to tag and index
-  cache_line_t* cache = (cache_line_t*) malloc(cache_size*sizeof(cache_line_t));
+  // Figure out number of bits dedicated to tag and index, allocate cache and clear it
 
-  uint8_t block_offset_bits = 6;                                          // Constant, as block size is 64
-  uint16_t index_bits = log2(cache_size / block_size);                    // log2 of no. of blocks is the number of bits needed for index
+  uint8_t block_offset_bits = 6;                                      // Constant, as block size is 64
+  uint32_t blocks = cache_size / block_size;                          // No. of blocks in the cache
+  uint16_t index_bits = log2(blocks);                                 // log2 of no. of blocks is the number of bits needed for index
   uint16_t tag_bits = ADDRESS_BITS - block_offset_bits - index_bits;  // The rest of the bits in the address are given to the tag
+  
+  cache_line_t* cache = (cache_line_t*) malloc(cache_size*sizeof(cache_line_t));
+  memset(cache, 0, blocks*sizeof(cache_line_t));
+
+
 
   /* Loop until whole trace file has been read */
   mem_access_t access;
@@ -158,7 +164,34 @@ void main(int argc, char** argv) {
     uint32_t tag = access.address << (index_bits);
     tag = tag >> (index_bits + block_offset_bits);
 
+    uint32_t offset = 0;               // offset to be used if split cache is used
+    uint32_t search_length = blocks ;  // If fully associative split cache is used, only half the
+                                      // cache should be searched through. To acheive a more
+                                      // general solution, this variable is used to keep track of
+                                      // of how many cache entries that are to be searched through
+                                      // Note: in the case of a direct mapped cache, this variable is unused
     if (cache_org == sc){
+      search_length = blocks / 2;
+      // Conditional assignment, if the access is to an instruction, the offset
+      // into the cache array should be 0, and if the access is to data, the 
+      // offset should be half of the number of blocks (search_length is reused
+      // here to save one computation). This offset is added because instructions
+      // are saved in the first half of the cache array, and data in the second half
+      offset = (access.accesstype == instruction) ? 0 : search_length;
+    }
+
+    if (cache_mapping == dm){
+        if (cache[offset + index].tag == tag && ){ // Cache hit
+          cache_statistics.hits++;
+        }
+        else { // Cache miss
+          cache[offset + index].tag = tag; // "Retrieve" newly used value into cache
+        }
+    }
+    else { // cache_mapping == fa
+
+    }
+    /*if (cache_org == sc){
       // set offset according to access type of data. 
       // Instructions are saved in the first half of 
       // cache array and data in the other half
@@ -182,7 +215,7 @@ void main(int argc, char** argv) {
       else {  // cache_mapping == fa        
       
       }
-    }
+    }*/
     // Increment number of accesses once per loop
     cache_statistics.accesses++;
   }
