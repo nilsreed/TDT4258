@@ -29,6 +29,7 @@ typedef struct {
     uint16_t idx;
     uint32_t tag;
     access_t type;
+    uint8_t valid;
 } cache_line_t;
 
 // DECLARE CACHES AND COUNTERS FOR THE STATS HERE
@@ -37,6 +38,11 @@ uint32_t cache_size;
 uint32_t block_size = 64;
 cache_map_t cache_mapping;
 cache_org_t cache_org;
+
+// counters for fully associative cache FIFO queue
+uint8_t d_entries = 0;  // data cache entries
+uint8_t i_entries = 0;  // intstruction cache entries
+uint8_t t_entries = 0;  // total cache entries
 
 // USE THIS FOR YOUR CACHE STATISTICS
 cache_stat_t cache_statistics;
@@ -136,6 +142,15 @@ void main(int argc, char** argv) {
   uint16_t index_bits = log2(blocks);                                 // log2 of no. of blocks is the number of bits needed for index
   uint16_t tag_bits = ADDRESS_BITS - block_offset_bits - index_bits;  // The rest of the bits in the address are given to the tag
   
+  // If the cache is split, the indices need to reflect only addressing half the cache
+  // This is equivalent to removing one bit for the indices, as this halves the number
+  // of values the index can represent
+  // This leaves a "leftover bit" which the tag absorbs.
+  if (cache_org == sc){
+    index_bits--;
+    tag_bits++;
+  }
+
   cache_line_t* cache = (cache_line_t*) malloc(cache_size*sizeof(cache_line_t));
   memset(cache, 0, blocks*sizeof(cache_line_t));
 
@@ -181,41 +196,65 @@ void main(int argc, char** argv) {
     }
 
     if (cache_mapping == dm){
-        if (cache[offset + index].tag == tag && ){ // Cache hit
-          cache_statistics.hits++;
+        // The expression here is quite long, so it's split over three lines
+        // First, we chech if the tag of the data stored on the correct index
+        // (directly mapped, so there is only one correct index) correct. If
+        // that is correct, we check if the types match (data or instruction)
+        // and lastly (for good measure) that the cache entry is valid
+        // If all three are true, then this constitures a cache hit
+        if (cache[offset + index].tag == tag && \
+            cache[offset + index].type == access.accesstype && \
+            cache[offset + index].valid){
+          cache_statistics.hits++;  // Update hit statistic and move on to next access
         }
         else { // Cache miss
-          cache[offset + index].tag = tag; // "Retrieve" newly used value into cache
+          cache[offset + index].idx = index;              // "Retrieve" newly used value into cache
+          cache[offset + index].tag = tag;                
+          cache[offset + index].type = access.accesstype; // Set access type
+          cache[offset + index].valid = 1;                // Set validity bit
         }
     }
     else { // cache_mapping == fa
-
-    }
-    /*if (cache_org == sc){
-      // set offset according to access type of data. 
-      // Instructions are saved in the first half of 
-      // cache array and data in the other half
-      uint32_t offset = (access.accesstype == instruction) ? 0 : cache_size/2;
-      if (cache_mapping == dm){
-        if (cache[offset + index].tag == tag){ // Cache hit
-          cache_statistics.hits++;
+      // In the fully associative case, we must search through the whole cache
+      // Using the offset and search_length variables this is done independently
+      // of cache organization
+      uint8_t hit = 0;
+      for (int i = offset; i < offset + search_length; i++){
+        // First check the index, tag and validity in one operation
+        if (cache[i].idx == index && cache[i].tag == tag && cache[i].valid){
+          // Then check type match separately
+          if (cache[i].type = access.accesstype){
+            hit = 1;
+            cache_statistics.hits++;  // Update hit statistic
+          }
+          else {  
+            // If there is a type mismatch, the cache block must be invalidated
+            // since there can only be one valid block with the same index+tag pair
+            // we can assume that we won't find what we're looking for in the cache
+            // after invalidating the type-mismatched block, so we can break out of
+            // the loop and retrieve the new memory access into the cache
+            cache[i].valid = 0;
+          }
+          break;  // break out of loop and go to next access
         }
-        else { // Cache miss
-          cache[offset + index].tag = tag; // "Retrieve" newly used value into cache
+      }
+      // If no hit in the cache, load memory into cache
+      if (!hit){
+        if (cache_org == sc){
+
+        }
+        else { // cache_org == uc
+          if (t_entries < cache_size){
+            cache[t_entries] = (cache_line_t) {
+              .idx = index,
+              .tag = tag,
+              .type = access.accesstype,
+              .valid = 1
+              };
+          }
         }
       }
-      else {  // cache_mapping == fa        
-      
-      }
     }
-    else { // cache_org == uc
-      if (cache_mapping == dm){
-
-      }
-      else {  // cache_mapping == fa        
-      
-      }
-    }*/
     // Increment number of accesses once per loop
     cache_statistics.accesses++;
   }
