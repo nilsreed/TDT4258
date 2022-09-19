@@ -3,9 +3,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 
 #define ADDRESS_BITS 32
+#define MIN_CACHE_SIZE 128
+#define MAX_CACHE_SIZE 4096
 
 typedef enum { dm, fa } cache_map_t;
 typedef enum { uc, sc } cache_org_t;
@@ -83,6 +84,10 @@ mem_access_t read_transaction(FILE* ptr_file) {
   return access;
 }
 
+int is_power_of_2(int n){
+  return !(n & (n-1));
+}
+
 void main(int argc, char** argv) {
   // Reset statistics:
   memset(&cache_statistics, 0, sizeof(cache_stat_t));
@@ -135,6 +140,17 @@ void main(int argc, char** argv) {
     exit(1);
   }
 
+  /* Check that the cache size is within limits and a power of 2 */
+  if (cache_size < MIN_CACHE_SIZE){
+    fprintf(stderr, "Error: Cache size too small!\n");
+    exit(1);
+  } else if (cache_size > MAX_CACHE_SIZE){
+    fprintf(stderr, "Error: Cache size too big!\n");
+    exit(1);
+  } else if (!is_power_of_2(cache_size)){
+    fprintf(stderr, "Error: Cache size not a power of 2!\n");
+    exit(1);
+  }
   // Figure out number of bits dedicated to tag and index, allocate cache and clear it
 
   uint8_t block_offset_bits = 6;                                      // Constant, as block size is 64
