@@ -171,6 +171,15 @@ void main(int argc, char** argv) {
   memset(cache, 0, blocks*sizeof(cache_line_t));
 
 
+/*
+(cache_line_t) {
+              .idx = index,
+              .tag = tag,
+              .type = access.accesstype,
+              .valid = 1
+              };
+*/
+
 
   /* Loop until whole trace file has been read */
   mem_access_t access;
@@ -191,9 +200,9 @@ void main(int argc, char** argv) {
      */
     
     // Find index and tag for searching in the cache
-    uint16_t index = access.address >> (ADDRESS_BITS - index_bits);
-    uint32_t tag = access.address << (index_bits);
-    tag = tag >> (index_bits + block_offset_bits);
+    uint32_t tag = access.address >> (ADDRESS_BITS - tag_bits);
+    uint32_t index = access.address << (tag_bits);
+    index = index >> (tag_bits + block_offset_bits);
 
     uint32_t offset = 0;               // offset to be used if split cache is used
     uint32_t search_length = blocks ;  // If fully associative split cache is used, only half the
@@ -202,71 +211,55 @@ void main(int argc, char** argv) {
                                       // of how many cache entries that are to be searched through
                                       // Note: in the case of a direct mapped cache, this variable is unused
     if (cache_org == sc){
-      search_length = blocks / 2;
-      // Conditional assignment, if the access is to an instruction, the offset
-      // into the cache array should be 0, and if the access is to data, the 
-      // offset should be half of the number of blocks (search_length is reused
-      // here to save one computation). This offset is added because instructions
-      // are saved in the first half of the cache array, and data in the second half
-      offset = (access.accesstype == instruction) ? 0 : search_length;
-    }
+      if (cache_mapping == dm) {
 
-    if (cache_mapping == dm){
-        // The expression here is quite long, so it's split over three lines
-        // First, we chech if the tag of the data stored on the correct index
-        // (directly mapped, so there is only one correct index) correct. If
-        // that is correct, we check if the types match (data or instruction)
-        // and lastly (for good measure) that the cache entry is valid
-        // If all three are true, then this constitures a cache hit
-        if (cache[offset + index].tag == tag && \
-            cache[offset + index].type == access.accesstype && \
-            cache[offset + index].valid){
-          cache_statistics.hits++;  // Update hit statistic and move on to next access
-        }
-        else { // Cache miss
-          cache[offset + index].idx = index;              // "Retrieve" newly used value into cache
-          cache[offset + index].tag = tag;                
-          cache[offset + index].type = access.accesstype; // Set access type
-          cache[offset + index].valid = 1;                // Set validity bit
-        }
-    }
-    else { // cache_mapping == fa
-      // In the fully associative case, we must search through the whole cache
-      // Using the offset and search_length variables this is done independently
-      // of cache organization
-      uint8_t hit = 0;
-      for (int i = offset; i < offset + search_length; i++){
-        // First check the index, tag and validity in one operation
-        if (cache[i].idx == index && cache[i].tag == tag && cache[i].valid){
-          // Then check type match separately
-          if (cache[i].type = access.accesstype){
-            hit = 1;
-            cache_statistics.hits++;  // Update hit statistic
-          }
-          else {  
-            // If there is a type mismatch, the cache block must be invalidated
-            // since there can only be one valid block with the same index+tag pair
-            // we can assume that we won't find what we're looking for in the cache
-            // after invalidating the type-mismatched block, so we can break out of
-            // the loop and retrieve the new memory access into the cache
-            cache[i].valid = 0;
-          }
-          break;  // break out of loop and go to next access
-        }
+      } else { // cache_mapping == fa
+
       }
-      // If no hit in the cache, load memory into cache
-      if (!hit){
-        if (cache_org == sc){
-
+    } else { // cache_org == uc
+      if (cache_mapping == dm) {
+        // If the cache is unified and direct mapped there is only one place
+        // we need to check. If the tag is correct, the acces type is correct
+        // and the entry is valid, we have a cache hit. In all other cases, we
+        // have a cache miss, and we can simply "retrieve" the "data" we're
+        // looking for and put it in the cache.
+        if (cache[index].tag == tag && \
+            cache[index].type == access.accesstype && \
+            cache[index].valid){ // hit
+          cache_statistics.hits++;
+        } else { // miss
+          // "Retrieve" "data" into cache
+          cache[index] = (cache_line_t) {
+            .idx = index,
+             .tag = tag,
+             .type = access.accesstype,
+             .valid = 1
+             };
         }
-        else { // cache_org == uc
-          if (t_entries < cache_size){
-            cache[t_entries] = (cache_line_t) {
-              .idx = index,
-              .tag = tag,
-              .type = access.accesstype,
-              .valid = 1
-              };
+      } else { // cache_mapping == fa
+        int hit = 0;
+        for (int i = 0; i < cache_size; i++){
+          // When the cache is fully associative, we say that the index
+          // is 0 bits long and that the address is divided into tag
+          // and block offset. Thus one should only chech the tag.
+          // In this implementation I instead compare index and tag
+          // for compatibility with the direct mapped case. This way
+          // the tag and index don't need to change size.
+          // The result is the same.
+          // If there index and tag match, we either have a hit
+          // or we need to invalidate the cache block because it
+          // has the wrong type
+          if (cache[i].idx == index && cache[i].tag == tag){
+            if (cache[i].type == access.accesstype){
+              hit = 1;
+              cache_statistics.hits++;
+              break;
+            } else {
+              // Here we need to invalidate the cache entry with
+              // correct address but wrong data type. In practice
+              // we just advance the FIFO queue over it using memset
+              memcpy(cache + i, cache + i + 1, cache_size - i - 1);
+            }
           }
         }
       }
