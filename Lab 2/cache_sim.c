@@ -36,6 +36,7 @@ typedef struct {
 // DECLARE CACHES AND COUNTERS FOR THE STATS HERE
 
 uint32_t cache_size;
+uint32_t half_cache;  // convenience variable to avoid calculating cache_size/2 over and over again
 uint32_t block_size = 64;
 cache_map_t cache_mapping;
 cache_org_t cache_org;
@@ -170,16 +171,7 @@ void main(int argc, char** argv) {
   cache_line_t* cache = (cache_line_t*) malloc(cache_size*sizeof(cache_line_t));
   memset(cache, 0, blocks*sizeof(cache_line_t));
 
-
-/*
-(cache_line_t) {
-              .idx = index,
-              .tag = tag,
-              .type = access.accesstype,
-              .valid = 1
-              };
-*/
-
+  half_cache = cache_size/2;
 
   /* Loop until whole trace file has been read */
   mem_access_t access;
@@ -229,32 +221,106 @@ void main(int argc, char** argv) {
           }
           // Check if there is data in the cache with the same
           // index and tag and invalidate if this is the case
-          if (cache[index + cache_size/2].tag == tag && ){
-            // FORTSETT HER
+          if (cache[index + half_cache].tag == tag && cache[index + half_cache].valid){
+            cache[index + half_cache].valid = 0;
           }
         } else { // access.accesstype == data
-
+          // Do excactly the same as for instruction but look in other half of cache instead
+          if (cache[index + half_cache].tag == tag && cache[index + half_cache].valid){
+            cache_statistics.hits++;
+          } else {
+            cache[index] = (cache_line_t) {
+                         .idx = index,
+                         .tag = tag,
+                         .type = access.accesstype,
+                         .valid = 1
+                         };
+          }
+          // Check if there are instructions in the cache with the
+          // same index and tag and invalidate if this is the case
+          if (cache[index].tag == tag && cache[index].valid){
+            cache[index].valid = 0;
+          }
         }
       } else { // cache_mapping == fa
         if (access.accesstype == instruction){
-
+          int hit = 0;
+          for (int i = 0; i < half_cache; i++){ // Search through part of cache reserved for instructions
+            if (cache[i].idx == index && cache[i].tag == tag && cache[i].valid){
+              hit = 1;
+              cache_statistics.hits++;
+              break;
+            }
+          }
+          if (!hit){
+            if (i_entries < half_cache){ // if instruction cache is not full
+              i_entries++;
+            } else { // instruction cache is full, advance FIFO
+              memcpy(cache, cache + 1, (half_cache - 1)*sizeof(cache_line_t));
+            }
+            // Place desired entry in cache
+            cache[i_entries - 1] = (cache_line_t) {
+                                   .idx = index,
+                                   .tag = tag,
+                                   .type = access.accesstype,
+                                   .valid = 1
+                                   };
+          }
+          // Search through data cache and invalidate if there is an entry with matching tag and index
+          for (int i = half_cache; i < cache_size; i++){
+            if (cache[i].idx == index && cache[i].tag == tag && cache[i].valid){
+              memcpy(cache + i, cache + i + 1, (cache_size - i - 1)*sizeof(cache_line_t)); // Advance FIFO over newly invalidated entry
+              d_entries--;
+              cache[half_cache + d_entries].valid = 0; // Invalidate duplicate entry at the end
+              break; // Only one entry with a given tag and address combo can exist in the cache at the same time, so we can stop if we've found one.
+            }
+          }
         } else { // access.accesstype == data
-
+        // Do exactly the same as for instruction, but search through opposite halves of cache
+        int hit = 0;
+          for (int i = half_cache; i < cache_size; i++){ // Search through part of cache reserved for data
+            if (cache[i].idx == index && cache[i].tag == tag && cache[i].valid){
+              hit = 1;
+              cache_statistics.hits++;
+              break;
+            }
+          }
+          if (!hit){
+            if (d_entries < half_cache){ // if instruction cache is not full
+              d_entries++;
+            } else { // instruction cache is full, advance FIFO
+              memcpy(cache + half_cache, cache + half_cache + 1, (half_cache - 1)*sizeof(cache_line_t));
+            }
+            // Place desired entry in cache
+            cache[half_cache + d_entries - 1] = (cache_line_t) {
+                                                .idx = index,
+                                                .tag = tag,
+                                                .type = access.accesstype,
+                                                .valid = 1
+                                                };
+          }
+          // Search through instruction cache and invalidate if there is an entry with matching tag and index
+          for (int i = 0; i < half_cache; i++){
+            if (cache[i].idx == index && cache[i].tag == tag && cache[i].valid){
+              memcpy(cache + i, cache + i + 1, (half_cache - i - 1)*sizeof(cache_line_t)); // Advance FIFO over newly invalidated entry
+              i_entries--;
+              cache[i_entries].valid = 0; // Invalidate duplicate entry at the end
+              break; // Only one entry with a given tag and address combo can exist in the cache at the same time, so we can stop if we've found one.
+            }
+          }
         }
       }
     } else { // cache_org == uc
       if (cache_mapping == dm) {
         // If the cache is unified and direct mapped there is only one place
-        // we need to check. If the tag is correct, the acces type is correct
+        // we need to check. If the tag is correct, the access type is correct
         // and the entry is valid, we have a cache hit. In all other cases, we
-        // have a cache miss, and we can simply "retrieve" the "data" we're
-        // looking for and put it in the cache.
-        if (cache[index].tag == tag && \
-            cache[index].type == access.accesstype && \
-            cache[index].valid){ // hit
+        // have a cache miss, and we can simply load the entry we're
+        // looking for into the cache
+        if (cache[index].tag == tag && cache[index].type == access.accesstype && cache[index].valid){ // hit
           cache_statistics.hits++;
         } else { // miss
-          // "Retrieve" "data" into cache
+          // Load entry into cache
           cache[index] = (cache_line_t) {
                          .idx = index,
                          .tag = tag,
@@ -287,7 +353,7 @@ void main(int argc, char** argv) {
               // Here we need to invalidate the cache entry with
               // correct address but wrong data type. In practice
               // we just advance the FIFO queue over it using memcpy
-              memcpy(cache + i, cache + i + 1, cache_size - i - 1);
+              memcpy(cache + i, cache + i + 1, (cache_size - i - 1)*sizeof(cache_line_t));
               t_entries--;                // Update number of entries in cache
               cache[t_entries].valid = 0; // simply invalidate duplicate last entry
             }
@@ -297,7 +363,7 @@ void main(int argc, char** argv) {
           if (t_entries < cache_size){ // cache is not full
             t_entries++;
           } else { // cache is full
-            memcpy(cache, cache + 1, cache_size - 1); // Evict at the start of FIFO queue by advancing the queue over it
+            memcpy(cache, cache + 1, (cache_size - 1)*sizeof(cache_line_t)); // Evict at the start of FIFO queue by advancing the queue over it
           }
           // Place desired entry at end of FIFO queue
           cache[t_entries - 1] = (cache_line_t) {
