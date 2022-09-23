@@ -211,10 +211,36 @@ void main(int argc, char** argv) {
                                       // of how many cache entries that are to be searched through
                                       // Note: in the case of a direct mapped cache, this variable is unused
     if (cache_org == sc){
+      // Adopt convention here that first half
+      // of cache array is used for instructions
+      // and the second half is used for data
       if (cache_mapping == dm) {
+        if (access.accesstype == instruction){
+          // Don't need to check the access type as the cache is split based on this already
+          if (cache[index].tag == tag && cache[index].valid){
+            cache_statistics.hits++;
+          } else {
+            cache[index] = (cache_line_t) {
+                         .idx = index,
+                         .tag = tag,
+                         .type = access.accesstype,
+                         .valid = 1
+                         };
+          }
+          // Check if there is data in the cache with the same
+          // index and tag and invalidate if this is the case
+          if (cache[index + cache_size/2].tag == tag && ){
+            // FORTSETT HER
+          }
+        } else { // access.accesstype == data
 
+        }
       } else { // cache_mapping == fa
+        if (access.accesstype == instruction){
 
+        } else { // access.accesstype == data
+
+        }
       }
     } else { // cache_org == uc
       if (cache_mapping == dm) {
@@ -230,11 +256,11 @@ void main(int argc, char** argv) {
         } else { // miss
           // "Retrieve" "data" into cache
           cache[index] = (cache_line_t) {
-            .idx = index,
-             .tag = tag,
-             .type = access.accesstype,
-             .valid = 1
-             };
+                         .idx = index,
+                         .tag = tag,
+                         .type = access.accesstype,
+                         .valid = 1
+                         };
         }
       } else { // cache_mapping == fa
         int hit = 0;
@@ -249,7 +275,10 @@ void main(int argc, char** argv) {
           // If there index and tag match, we either have a hit
           // or we need to invalidate the cache block because it
           // has the wrong type
-          if (cache[i].idx == index && cache[i].tag == tag){
+          // Validity is also important to check, as the cache
+          // can contain invalidated entries at the end which
+          // have correct addresses
+          if (cache[i].idx == index && cache[i].tag == tag && cache[i].valid){
             if (cache[i].type == access.accesstype){
               hit = 1;
               cache_statistics.hits++;
@@ -257,10 +286,26 @@ void main(int argc, char** argv) {
             } else {
               // Here we need to invalidate the cache entry with
               // correct address but wrong data type. In practice
-              // we just advance the FIFO queue over it using memset
+              // we just advance the FIFO queue over it using memcpy
               memcpy(cache + i, cache + i + 1, cache_size - i - 1);
+              t_entries--;                // Update number of entries in cache
+              cache[t_entries].valid = 0; // simply invalidate duplicate last entry
             }
           }
+        }
+        if (!hit){ // If the address we were looking wasn't in the cache, we need to load it in
+          if (t_entries < cache_size){ // cache is not full
+            t_entries++;
+          } else { // cache is full
+            memcpy(cache, cache + 1, cache_size - 1); // Evict at the start of FIFO queue by advancing the queue over it
+          }
+          // Place desired entry at end of FIFO queue
+          cache[t_entries - 1] = (cache_line_t) {
+                                .idx = index,
+                                .tag = tag,
+                                .type = access.accesstype,
+                                .valid = 1
+                                };
         }
       }
     }
