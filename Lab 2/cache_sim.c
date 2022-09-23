@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #define ADDRESS_BITS 32
 #define MIN_CACHE_SIZE 128
