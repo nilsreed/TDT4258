@@ -9,6 +9,8 @@ CC = gcc
 $(TARGET): $(SRC)
 	$(CC) -o $@ $^ $(LDFLAGS)  
 
+debug: $(SRC)
+	$(CC) -g -o $(TARGET) $(SRC) $(LDFLAGS)
 .PHONY: clean
 clean:
 	rm $(TARGET)
