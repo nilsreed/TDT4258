@@ -197,7 +197,6 @@ void main(int argc, char** argv) {
     uint32_t index = access.address << (tag_bits);
     index = index >> (tag_bits + block_offset_bits);
 
-    uint32_t offset = 0;               // offset to be used if split cache is used
     uint32_t search_length = blocks ;  // If fully associative split cache is used, only half the
                                       // cache should be searched through. To acheive a more
                                       // general solution, this variable is used to keep track of
