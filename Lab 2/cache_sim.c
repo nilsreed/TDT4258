@@ -37,7 +37,7 @@ typedef struct {
 // DECLARE CACHES AND COUNTERS FOR THE STATS HERE
 
 uint32_t cache_size;
-uint32_t half_cache;  // convenience variable to avoid calculating cache_size/2 over and over again
+uint32_t half_cache;  // convenience variable to avoid calculating blocks/2 over and over again
 uint32_t block_size = 64;
 cache_map_t cache_mapping;
 cache_org_t cache_org;
@@ -169,10 +169,10 @@ void main(int argc, char** argv) {
     tag_bits++;
   }
 
-  cache_line_t* cache = (cache_line_t*) malloc(cache_size*sizeof(cache_line_t));
+  cache_line_t* cache = (cache_line_t*) malloc(blocks*sizeof(cache_line_t));
   memset(cache, 0, blocks*sizeof(cache_line_t));
 
-  half_cache = cache_size/2;
+  half_cache = blocks/2;
 
   /* Loop until whole trace file has been read */
   mem_access_t access;
@@ -273,9 +273,9 @@ void main(int argc, char** argv) {
                                    };
           }
           // Search through data cache and invalidate if there is an entry with matching tag and index
-          for (int i = half_cache; i < cache_size; i++){
+          for (int i = half_cache; i < blocks; i++){
             if (cache[i].idx == index && cache[i].tag == tag && cache[i].valid){
-              memcpy(cache + i, cache + i + 1, (cache_size - i - 1)*sizeof(cache_line_t)); // Advance FIFO over newly invalidated entry
+              memcpy(cache + i, cache + i + 1, (blocks - i - 1)*sizeof(cache_line_t)); // Advance FIFO over newly invalidated entry
               d_entries--;
               cache[half_cache + d_entries].valid = 0; // Invalidate duplicate entry at the end
               break; // Only one entry with a given tag and address combo can exist in the cache at the same time, so we can stop if we've found one.
@@ -284,7 +284,7 @@ void main(int argc, char** argv) {
         } else { // access.accesstype == data
         // Do exactly the same as for instruction, but search through opposite halves of cache
         int hit = 0;
-          for (int i = half_cache; i < cache_size; i++){ // Search through part of cache reserved for data
+          for (int i = half_cache; i < blocks; i++){ // Search through part of cache reserved for data
             if (cache[i].idx == index && cache[i].tag == tag && cache[i].valid){
               hit = 1;
               cache_statistics.hits++;
@@ -336,7 +336,7 @@ void main(int argc, char** argv) {
         }
       } else { // cache_mapping == fa
         int hit = 0;
-        for (int i = 0; i < cache_size; i++){
+        for (int i = 0; i < blocks; i++){
           // When the cache is fully associative, we say that the index
           // is 0 bits long and that the address is divided into tag
           // and block offset. Thus one should only chech the tag.
@@ -359,17 +359,17 @@ void main(int argc, char** argv) {
               // Here we need to invalidate the cache entry with
               // correct address but wrong data type. In practice
               // we just advance the FIFO queue over it using memcpy
-              memcpy(cache + i, cache + i + 1, (cache_size - i - 1)*sizeof(cache_line_t));
+              memcpy(cache + i, cache + i + 1, (blocks - i - 1)*sizeof(cache_line_t));
               t_entries--;                // Update number of entries in cache
               cache[t_entries].valid = 0; // simply invalidate duplicate last entry
             }
           }
         }
         if (!hit){ // If the address we were looking wasn't in the cache, we need to load it in
-          if (t_entries < cache_size){ // cache is not full
+          if (t_entries < blocks){ // cache is not full
             t_entries++;
           } else { // cache is full
-            memcpy(cache, cache + 1, (cache_size - 1)*sizeof(cache_line_t)); // Evict at the start of FIFO queue by advancing the queue over it
+            memcpy(cache, cache + 1, (blocks - 1)*sizeof(cache_line_t)); // Evict at the start of FIFO queue by advancing the queue over it
           }
           // Place desired entry at end of FIFO queue
           cache[t_entries - 1] = (cache_line_t) {
