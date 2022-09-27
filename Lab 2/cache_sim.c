@@ -235,12 +235,12 @@ void main(int argc, char** argv) {
           if (cache[index + half_cache].tag == tag && cache[index + half_cache].valid){
             cache_statistics.hits++;
           } else {
-            cache[index] = (cache_line_t) {
-                         .idx = index,
-                         .tag = tag,
-                         .type = access.accesstype,
-                         .valid = 1
-                         };
+            cache[index + half_cache] = (cache_line_t) {
+                                        .idx = index,
+                                        .tag = tag,
+                                        .type = access.accesstype,
+                                        .valid = 1
+                                        };
           }
           // Check if there are instructions in the cache with the
           // same index and tag and invalidate if this is the case
