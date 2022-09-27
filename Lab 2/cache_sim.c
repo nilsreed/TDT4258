@@ -197,6 +197,17 @@ void main(int argc, char** argv) {
     uint32_t index = access.address << (tag_bits);
     index = index >> (tag_bits + block_offset_bits);
 
+    // If the amount of index bits is equal to zero this means
+    // that tag_bits + block_offset bits is equal to 32. This is
+    // a problem, because shifting a uint32_t by 32 is undefined
+    // behaviour in C. Thus manual correction is needed here.
+    // (It could also be implemented by doing the right shift
+    // in 2 separate operations, but I think this is clearer and
+    // also highlights that this is an edge case)
+    if (index_bits == 0){
+      index = 0;
+    }
+
     if (cache_org == sc){
       // Adopt convention here that first half
       // of cache array is used for instructions
