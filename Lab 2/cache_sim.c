@@ -182,15 +182,6 @@ void main(int argc, char** argv) {
     if (access.address == 0) break;
     printf("%d %x\n", access.accesstype, access.address);
     /* Do a cache access */
-    /**
-     * TODO
-     *  find tag, idx
-     *  search cache
-     *    differently based on parameters
-     *  update cache if not found
-     *    differently based on parameters
-     *  update cache_statistics
-     */
     
     // Find index and tag for searching in the cache
     uint32_t tag = access.address >> (ADDRESS_BITS - tag_bits);
