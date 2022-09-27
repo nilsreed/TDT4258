@@ -197,11 +197,6 @@ void main(int argc, char** argv) {
     uint32_t index = access.address << (tag_bits);
     index = index >> (tag_bits + block_offset_bits);
 
-    uint32_t search_length = blocks ;  // If fully associative split cache is used, only half the
-                                      // cache should be searched through. To acheive a more
-                                      // general solution, this variable is used to keep track of
-                                      // of how many cache entries that are to be searched through
-                                      // Note: in the case of a direct mapped cache, this variable is unused
     if (cache_org == sc){
       // Adopt convention here that first half
       // of cache array is used for instructions
