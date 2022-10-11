@@ -9,6 +9,26 @@
 #include <time.h>
 #include <poll.h>
 
+#include <fcntl.h>
+#include <linux/fb.h>
+#include <sys/mman.h>
+#include <stdint.h>
+
+/* OWN DEFINES */
+// Frame buffer defines
+#define FB_PATH     "/dev/fb1" // Program assumes frame buffer 1 is "RPi-Sense FB". Check this by running $ cat /sys/class/graphics/fb1/name
+#define LIGHT_ON    0xFFFF
+#define LIGHT_OFF   0x0000
+
+// Joystick defines
+#define JOYSTICK_PATH "/dev/input/event1" // Program assumes joystick is mapped to event1. Chech thiss by running $ cat /sys/class/input/event1/device/name
+
+// Game defines
+#define GRID_DIM    8           // Grid dimension (8x8)
+#define BOARD_BYTES GRID_DIM*GRID_DIM*sizeof(uint16_t) //Number of bytes needed to represent the LED matrix in memory
+
+/* END OWN DEFINES */
+
 
 // The game state can be used to detect what happens on the playfield
 #define GAMEOVER   0
@@ -58,18 +78,59 @@ gameConfig game = {
                    .initNextGameTick = 50,
 };
 
+/* OWN GLOBALS*/
+int framebuffer_fd;   // Framebuffer file descriptor, or more accurately; index into the process' table of file descriptor, contains index of framebuffer.
+int joystick_fd;      // File descriptor for joystick input.
+uint16_t* LED_matrix; // Pointer to LED matrix mapped into memory by mmap in initializeSenseHat()
+
+/* END OWN GLOBALS*/
 
 // This function is called on the start of your application
 // Here you can initialize what ever you need for your task
 // return false if something fails, else true
 bool initializeSenseHat() {
+  // Open the framebuffer for reading
+  // Need read and write permission so that mmap will work.
+  framebuffer_fd = open(FB_PATH, O_RDWR);
+  if (framebuffer_fd == -1){
+    fprintf(stderr, "ERROR: Failed to open framebuffer!\n");
+    return false;
+  }
+  
+  // Map framebuffer into process memory so we can write directly to a variable
+  LED_matrix = mmap(NULL, BOARD_BYTES, PROT_WRITE | PROT_READ, MAP_SHARED, framebuffer_fd, 0);
+  if (LED_matrix == MAP_FAILED){ // Check if mapping succeeded
+    close(framebuffer_fd);
+    fprintf(stderr, "ERROR: Failed to map framebuffer to memory!\n");
+    return false;
+  }
+  
+  memset(LED_matrix, 0x00, BOARD_BYTES); // Clear LED matrix
+  
+  // Open input event for joystick
+  joystick_fd = open(JOYSTICK_PATH, O_RDONLY);
+  if (joystick_fd == -1){ // Check if opening succeeded
+    fprintf(stderr, "ERROR: Failed to open joystick input event!\n");
+    munmap(LED_matrix, BOARD_BYTES);
+    close(framebuffer_fd);
+    return false;
+  }
   return true;
 }
 
 // This function is called when the application exits
 // Here you can free up everything that you might have opened/allocated
 void freeSenseHat() {
-
+  // Clear LED matrix before unmapping it from memory
+  memset(LED_matrix, 0x00, BOARD_BYTES); // Clear LED matrix
+  // Unmap framebuffer from memory
+  if(munmap(LED_matrix, BOARD_BYTES) == -1){
+    fprintf(stderr, "ERROR: Unable to unmap framebuffer from memory!\n");
+  }
+  // Close frame buffer file
+  close(framebuffer_fd);
+  // Close input event
+  close(joystick_fd);
 }
 
 // This function should return the key that corresponds to the joystick press
@@ -77,6 +138,36 @@ void freeSenseHat() {
 // and KEY_ENTER, when the the joystick is pressed
 // !!! when nothing was pressed you MUST return 0 !!!
 int readSenseHatJoystick() {
+  
+  //struct pollfd joystick_poll; // Struct for pass
+  /* READ JOYSTICK HERE */
+  
+  struct pollfd joystick_poll = {
+          .events = POLLIN,
+          .fd = joystick_fd
+  };
+  // Parameters to poll: joystick_poll, number of file descriptors and timeout
+  // Basically checks if there's any input to get from joystick input event at
+  // time of calling
+  if (poll(&joystick_poll, 1, 0)){
+    struct input_event event_buffer[8]; // input buffer
+    int bytes_read = read(joystick_fd, event_buffer, 8*sizeof(struct input_event)); // Read from event device into event_buffer
+    
+    if (bytes_read < (int) sizeof(struct input_event)){ // Too few bytes have been read
+      fprintf(stderr, "ERROR: Too few bytes read from input event to event buffer!\n");
+      return 0;
+    }
+    
+    // Find the first key event in the buffer and return it
+    // since the joystick inputs map to arrow keys and enter
+    // by default
+    for (int i = 0; i < bytes_read/sizeof(struct input_event); i++){
+      if (event_buffer[i].type != EV_KEY) continue;
+      if (event_buffer[i].value != 1) continue;
+      return event_buffer[i].code;
+    }
+  }
+  
   return 0;
 }
 
@@ -85,9 +176,17 @@ int readSenseHatJoystick() {
 // every game tick. The parameter playfieldChanged signals whether the game logic
 // has changed the playfield
 void renderSenseHatMatrix(bool const playfieldChanged) {
-  (void) playfieldChanged;
+  // If the playfield has changed, we need to re-render the board
+  if (playfieldChanged){
+    // Iterate through pixel grid in y and x directions
+    for (int yy = 0; yy < game.grid.y; yy++){
+      for (int xx = 0; xx < game.grid.x; xx++){
+        // If the pixel is occupied, LIGHT_ON is written, if it isn't, LIGHT on is written.
+        LED_matrix[yy*game.grid.y + xx] = (game.playfield[yy][xx].occupied) ? LIGHT_ON : LIGHT_OFF;
+      }
+    }
+  }
 }
-
 
 // The game logic uses only the following functions to interact with the playfield.
 // if you choose to change the playfield or the tile structure, you might need to
@@ -418,7 +517,7 @@ int main(int argc, char **argv) {
     bool playfieldChanged = sTetris(key);
     renderConsole(playfieldChanged);
     renderSenseHatMatrix(playfieldChanged);
-
+    
     // Wait for next tick
     gettimeofday(&eTv, NULL);
     unsigned long const uSecProcessTime = ((eTv.tv_sec * 1000000) + eTv.tv_usec) - ((sTv.tv_sec * 1000000 + sTv.tv_usec));
