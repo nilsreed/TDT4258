@@ -13,19 +13,26 @@
 #include <linux/fb.h>
 #include <sys/mman.h>
 #include <stdint.h>
+#include <string.h>
+#include <dirent.h>
 
 /* OWN DEFINES */
 // Frame buffer defines
-#define FB_PATH     "/dev/fb1" // Program assumes frame buffer 1 is "RPi-Sense FB". Check this by running $ cat /sys/class/graphics/fb1/name
+#define FB_PATH     "/dev"
+#define FB_PREFIX   "fb"
+#define FB_NAME     "RPi-Sense FB"
 #define LIGHT_ON    0xFFFF
 #define LIGHT_OFF   0x0000
 
 // Joystick defines
-#define JOYSTICK_PATH "/dev/input/event1" // Program assumes joystick is mapped to event1. Chech thiss by running $ cat /sys/class/input/event1/device/name
+#define INPUT_PATH    "/dev/input"
+#define INPUT_PREFIX  "event"
+#define JOYSTICK_NAME "Raspberry Pi Sense HAT Joystick"
 
 // Game defines
 #define GRID_DIM    8           // Grid dimension (8x8)
 #define BOARD_BYTES GRID_DIM*GRID_DIM*sizeof(uint16_t) //Number of bytes needed to represent the LED matrix in memory
+#define NO_COLOURS  6
 
 /* END OWN DEFINES */
 
@@ -40,6 +47,7 @@
 // the game logic allocate/deallocate and reset the memory
 typedef struct {
   bool occupied;
+  uint16_t colour;
 } tile;
 
 typedef struct {
@@ -83,7 +91,121 @@ int framebuffer_fd;   // Framebuffer file descriptor, or more accurately; index 
 int joystick_fd;      // File descriptor for joystick input.
 uint16_t* LED_matrix; // Pointer to LED matrix mapped into memory by mmap in initializeSenseHat()
 
+//                              RED     GREEN   BLUE    CYAN    YELLOW  ORANGE
+uint16_t colours[NO_COLOURS] = {0xF800, 0x07E0, 0x001F, 0x07FF, 0XFFE0, 0xFBE0}; 
+
 /* END OWN GLOBALS*/
+
+// Randomly choose a colour from the predefined colours
+uint16_t colour_sel(){
+  return colours[rand() % NO_COLOURS];
+}
+// Returns 1 if dir's name is prefixed by fb
+// meaning it's a framebuffer
+int fb_filter(const struct dirent* dir){
+    if (!strncmp(FB_PREFIX, dir->d_name, strlen(FB_PREFIX))){
+    return 1;
+  }
+  return 0;
+}
+
+// Returns 1 if dir's name is prefixed by event
+// meaning it's an event device
+int evdev_filter(const struct dirent* dir){
+  if (!strncmp(INPUT_PREFIX, dir->d_name, strlen(INPUT_PREFIX))){
+    return 1;
+  }
+  return 0;
+}
+
+int framebuffer_init(){
+  struct dirent** namelist;
+  struct fb_fix_screeninfo info;
+  int fd = -1;
+  
+  // Scan /dev for framebuffer devices
+  int no_devices = scandir(FB_PATH, &namelist, fb_filter, alphasort);
+  
+  // Iterate through all framebuffer devices found
+  for (int i = 0; i < no_devices; i++){
+    char fullpath[256];
+    
+    // Assemble full path for so it can be opened by open
+    snprintf(fullpath, sizeof(fullpath), "%s/%s", FB_PATH, namelist[i]->d_name);
+    // Open framebuffer device
+    fd = open(fullpath, O_RDWR);
+    
+    // If opening failed, go on to next iteration of loop
+    if (fd < 0) continue;
+    
+    // Get info from framebuffer device
+    ioctl(fd, FBIOGET_FSCREENINFO, &info);
+    
+    // Check if it is the correct framebuffer
+    // device by comparing identifiers. If it is,
+    // we can stop iterating through the name list
+    if (!strcmp(FB_NAME, info.id)){
+      break;
+    }
+    
+    // If it was the wrong framebuffer, close it and reset fd
+    close(fd);
+    fd = -1;
+  }
+  
+  // Iterate through namelist to free
+  // dynamically allocated memory
+  for (int i = 0; i < no_devices; i++){
+    free(namelist[i]);
+  }
+  
+  return fd;
+}
+
+int joystick_init(){
+  struct dirent** namelist;
+  int fd = -1;
+  
+  // Scan /dev/input for event devices
+  int no_devices = scandir(INPUT_PATH, &namelist, evdev_filter, alphasort);
+  
+  // Iterate through all event devices found
+  for (int i = 0; i < no_devices; i++){
+    char fullpath[256];
+    char name[256];
+    
+    // Assemble full path for so it can be opened by open
+    snprintf(fullpath, sizeof(fullpath), "%s/%s", INPUT_PATH, namelist[i]->d_name);
+    // Open framebuffer device
+    fd = open(fullpath, O_RDONLY);
+    
+    // If opening failed, go on to next iteration of loop
+    if (fd < 0) continue;
+    
+    // Get name from event device
+    ioctl(fd, EVIOCGNAME(sizeof(name)), name);
+    
+    // Check if it is the correct event device
+    // device by comparing identifiers. If it is,
+    // we can stop iterating through the name list
+    if (!strcmp(JOYSTICK_NAME, name)){
+      break;
+    }
+    
+    // If it was the wrong event device, close it and reset fd
+    close(fd);
+    fd = -1;
+  }
+  
+  // Iterate through namelist to free
+  // dynamically allocated memory
+  for (int i = 0; i < no_devices; i++){
+    free(namelist[i]);
+  }
+  
+  return fd;
+}
+
 
 // This function is called on the start of your application
 // Here you can initialize what ever you need for your task
@@ -91,7 +213,7 @@ uint16_t* LED_matrix; // Pointer to LED matrix mapped into memory by mmap in ini
 bool initializeSenseHat() {
   // Open the framebuffer for reading
   // Need read and write permission so that mmap will work.
-  framebuffer_fd = open(FB_PATH, O_RDWR);
+  framebuffer_fd = framebuffer_init();
   if (framebuffer_fd == -1){
     fprintf(stderr, "ERROR: Failed to open framebuffer!\n");
     return false;
@@ -108,13 +230,18 @@ bool initializeSenseHat() {
   memset(LED_matrix, 0x00, BOARD_BYTES); // Clear LED matrix
   
   // Open input event for joystick
-  joystick_fd = open(JOYSTICK_PATH, O_RDONLY);
+  joystick_fd = joystick_init();
   if (joystick_fd == -1){ // Check if opening succeeded
     fprintf(stderr, "ERROR: Failed to open joystick input event!\n");
     munmap(LED_matrix, BOARD_BYTES);
     close(framebuffer_fd);
     return false;
   }
+  
+  // seed random number generator with number of seconds since epoch
+  // to get different result every time
+  srand(time(NULL));
+  
   return true;
 }
 
@@ -137,11 +264,7 @@ void freeSenseHat() {
 // KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, with the respective direction
 // and KEY_ENTER, when the the joystick is pressed
 // !!! when nothing was pressed you MUST return 0 !!!
-int readSenseHatJoystick() {
-  
-  //struct pollfd joystick_poll; // Struct for pass
-  /* READ JOYSTICK HERE */
-  
+int readSenseHatJoystick() {  
   struct pollfd joystick_poll = {
           .events = POLLIN,
           .fd = joystick_fd
@@ -163,7 +286,7 @@ int readSenseHatJoystick() {
     // by default
     for (int i = 0; i < bytes_read/sizeof(struct input_event); i++){
       if (event_buffer[i].type != EV_KEY) continue;
-      if (event_buffer[i].value != 1) continue;
+      if (event_buffer[i].value != 2) continue;
       return event_buffer[i].code;
     }
   }
@@ -181,8 +304,8 @@ void renderSenseHatMatrix(bool const playfieldChanged) {
     // Iterate through pixel grid in y and x directions
     for (int yy = 0; yy < game.grid.y; yy++){
       for (int xx = 0; xx < game.grid.x; xx++){
-        // If the pixel is occupied, LIGHT_ON is written, if it isn't, LIGHT on is written.
-        LED_matrix[yy*game.grid.y + xx] = (game.playfield[yy][xx].occupied) ? LIGHT_ON : LIGHT_OFF;
+        // If the pixel is occupied, the tile's own colour is written, if it isn't, LIGHT on is written.
+        LED_matrix[yy*game.grid.y + xx] = (game.playfield[yy][xx].occupied) ? game.playfield[yy][xx].colour : LIGHT_OFF;
       }
     }
   }
@@ -194,6 +317,7 @@ void renderSenseHatMatrix(bool const playfieldChanged) {
 
 static inline void newTile(coord const target) {
   game.playfield[target.y][target.x].occupied = true;
+  game.playfield[target.y][target.x].colour = colour_sel(); // This line has been added, to add the constant colour to tiles required in the task
 }
 
 static inline void copyTile(coord const to, coord const from) {
